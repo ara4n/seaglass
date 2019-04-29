@@ -40,14 +40,14 @@ const transformTags = { // custom to matrix
         // Delete any style previously assigned, style is an allowedTag for font and span
         // because attributes are stripped after transforming
         delete attribs.style;
-        
+
         // Sanitise and transform data-mx-color and data-mx-bg-color to their CSS
         // equivalents
         const customCSSMapper = {
             'data-mx-color': 'color',
             'data-mx-bg-color': 'background-color',
         };
-        
+
         let style = "";
         Object.keys(customCSSMapper).forEach((customAttributeKey) => {
              const cssAttributeKey = customCSSMapper[customAttributeKey];
@@ -60,11 +60,11 @@ const transformTags = { // custom to matrix
                  delete attribs[customAttributeKey];
              }
         });
-        
+
         if (style) {
             attribs.style = style;
         }
-        
+
         return { tagName, attribs };
     },
 };
@@ -89,68 +89,72 @@ const sanitizeHtmlParams = {
 
     // Lots of these won't come up by default because we don't allow them
     selfClosing: ['img', 'br', 'hr', 'area', 'base', 'basefont', 'input', 'link', 'meta'],
-    
+
     // URL schemes we permit
     allowedSchemes: PERMITTED_URL_SCHEMES,
-    
+
     allowProtocolRelative: false,
     transformTags,
 };
 
-class Message extends preact.Component {
+class Event extends preact.Component {
     render() {
-        const ev = this.props.event;
-        
-        let body;
-        if (ev.content.format === 'org.matrix.custom.html') {
-            const html = sanitizeHtml(ev.content.formatted_body, sanitizeHtmlParams);
-            body = h('div', { className: "body", dangerouslySetInnerHTML: { "__html" : html }});
-        }
-        else {
-            body = h('div', { className: "body" }, ev.content.body );
-        }
-        
         return (
             h('tr', { key: ev.eventId }, [
                 h('td', { className: "avatar" }, "[ :-) ]" ),
-                h('td', { className: "content" }, [
-                    h('div', { className: "sender" }, ev.sender ),
-                    body,
-                ]),
+                h('td', { className: "content" }, this.props.content,
                 h('td', { className: "timestamp" }, "00:00" ),
             ])
         );
     }
 }
 
-class EncryptedMessage extends preact.Component {
+class Message extends preact.Component {
     render() {
         const ev = this.props.event;
-        return (
-            h('tr', { key: ev.eventId }, [
-                h('td', { className: "avatar" }, "[ :-) ]" ),
-                h('td', { className: "content" }, [
-                    h('div', { className: "sender" }, ev.sender ),
-                    h('div', { className: "body" },   ev.content.formatted_body || ev.content.body ),
-                ]),
-                h('td', { className: "timestamp" }, "00:00" ),
-            ])
-        );
+
+        let body;
+
+        switch (ev.content.msgtype) {
+            case "m.text":
+                if (ev.content.format === 'org.matrix.custom.html') {
+                    const html = sanitizeHtml(ev.content.formatted_body, sanitizeHtmlParams);
+                    body = h('div', { className: "body", dangerouslySetInnerHTML: { "__html" : html }});
+                }
+                else {
+                    body = h('div', { className: "body" }, ev.content.body );
+                }
+                break;
+            case "m.emote":
+                const prefix = `* ${ ev.sender } `;
+                if (ev.content.format === 'org.matrix.custom.html') {
+                    const html = sanitizeHtml(prefix + ev.content.formatted_body, sanitizeHtmlParams);
+                    body = h('div', { className: "body", dangerouslySetInnerHTML: { "__html" : html }});
+                }
+                else {
+                    body = h('div', { className: "body" }, prefix + ev.content.body );
+                }
+                return [ body ];
+                break;
+            case "m.image":
+                body = h('div', { className: "body" },
+                            h('img', { src : })
+                        );
+                break;
+        }
+
+        return ([
+            h('div', { className: "sender" }, ev.sender ),
+            body,
+        ]);
     }
 }
 
 class UnknownEvent extends preact.Component {
     render() {
-        const ev = this.props.event;
-        return (
-            h('tr', { key: ev.eventId }, [
-                h('td', { className: "avatar" }, null ),
-                h('td', { className: "content" }, [
-                    h('div', { className: "inline" }, `No event handler for ${ev.type}` ),
-                ]),
-                h('td', { className: "timestamp" }, "00:00" ),
-            ])
-        );
+        return ([
+            h('div', { className: "inline" }, `No event handler for ${ev.type}` ),
+        ]);
     }
 }
 
@@ -161,9 +165,9 @@ class Timeline extends preact.Component {
                 this.props.timeline.map((event)=>{
                     switch (event.type) {
                         case "m.room.message":
-                            return h(Message, { event });
+                            return h(Event, { event, content: h(Message, { event }});
                         default:
-                            return h(UnknownEvent, { event });
+                            return h(Event, { event, content: h(UnknownEvent, { event }});
                     }
                 })
             )
@@ -183,7 +187,7 @@ function replaceEvent(event) {
         const i = timeline.findIndex(e => e.eventId === ev.eventId);
         timeline[i] = ev;
     }
-    
+
     preact.render(h(Timeline, { timeline }), document.body, document.body.lastChild);
 }
 
